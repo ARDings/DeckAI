@@ -328,6 +328,63 @@ async def get_full_state():
 
 
 # ---------------------------------------------------------------------------
+# Test endpoint: simulate question detection
+# ---------------------------------------------------------------------------
+
+
+@app.post("/test/traffic")
+async def test_traffic(request: Request):
+    """Test the traffic light directly. Send {"color": "red|yellow|green"}"""
+    body = await request.json()
+    color = body.get("color", "green")
+    state = get_state()
+    state.set_traffic(TrafficLight(color))
+    return {"status": "ok", "traffic_light": state.traffic_light.value}
+
+
+@app.post("/test/question")
+async def test_question(request: Request):
+    """Simulate streaming completion with a given AI response text. Tests detection."""
+    body = await request.json()
+    text = body.get("text", "")
+    t = text.lower()
+
+    is_tool_use_stop = '"stop_reason":"tool_use"' in text or '"stop_reason": "tool_use"' in text
+    is_end_turn = '"stop_reason":"end_turn"' in text or '"stop_reason": "end_turn"' in text
+
+    question_patterns = [
+        "?", "soll ich", "möchtest du", "willst du",
+        "shall i", "would you like", "do you want me",
+        "choose", "wähle", "option",
+        "continue?", "proceed?", "fortfahren?",
+        "is that ok?", "does that look right?",
+        "confirm?", "bestätigen?",
+        "try again", "what would you",
+    ]
+    has_question = any(p in t for p in question_patterns)
+
+    state = get_state()
+    if is_tool_use_stop:
+        state.set_traffic(TrafficLight.RED, error_msg="Befehl wartet — genehmigen!")
+        result = "RED (stop_reason=tool_use)"
+    elif is_end_turn:
+        state.set_traffic(TrafficLight.GREEN)
+        result = "GREEN (stop_reason=end_turn)"
+    elif has_question:
+        state.set_traffic(TrafficLight.RED, error_msg="Rückfrage!")
+        result = "RED (question)"
+    else:
+        state.set_traffic(TrafficLight.GREEN)
+        result = "GREEN"
+
+    return {
+        "result": result,
+        "has_question": has_question,
+        "text_snippet": text[-200:],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Debug + Answer endpoints
 # ---------------------------------------------------------------------------
 
@@ -524,24 +581,41 @@ async def proxy_anthropic(request: Request):
                         all_chunks.append(chunk)
                         yield chunk
 
-            # After stream: check if AI asked a question
+            # After stream: check if AI needs user input (question, confirmation, etc.)
             full = b"".join(all_chunks).decode("utf-8", errors="ignore")
-            # Check the LAST 2000 chars (AI's final response, after any thinking blocks)
             tail = full[-2000:] if len(full) > 2000 else full
-            # Question patterns (German + English)
+            t = tail.lower()
+
+            # Detect if AI needs user action:
+            # 1. stop_reason="tool_use" → user must approve → RED (highest priority)
+            # 2. stop_reason="end_turn" → AI is done → GREEN (ignore polite "?")
+            is_tool_use_stop = '"stop_reason":"tool_use"' in full or '"stop_reason": "tool_use"' in full
+            is_end_turn = '"stop_reason":"end_turn"' in full or '"stop_reason": "end_turn"' in full
+
             question_patterns = [
-                "?", "möchtest", "soll ich", "fortfahren", "weitermachen",
-                "would you", "shall i", "continue", "proceed",
-                "choose", "option", "wählen", "entscheiden",
+                "?", "soll ich", "möchtest du", "willst du",
+                "shall i", "would you like", "do you want me",
+                "choose", "wähle", "option",
+                "continue?", "proceed?", "fortfahren?",
+                "is that ok?", "does that look right?",
+                "confirm?", "bestätigen?",
+                "try again", "what would you",
             ]
-            is_question = any(p.lower() in tail.lower() for p in question_patterns)
-            q_count = tail.count("?")
-            log.info(f"Stream done — ?count={q_count}, question={is_question}, tail_preview={tail[-200:]}")
-            if is_question:
-                state.set_traffic(TrafficLight.RED, error_msg="Rückfrage — Antwort nötig")
-                log.info("QUESTION DETECTED → RED")
+            has_question = any(p in tail.lower() for p in question_patterns)
+
+            # Decision: tool_use always RED, end_turn always GREEN
+            if is_tool_use_stop:
+                state.set_traffic(TrafficLight.RED, error_msg="Befehl wartet — genehmigen!")
+                log.info("stop_reason=tool_use → RED")
+            elif is_end_turn:
+                state.set_traffic(TrafficLight.GREEN)
+                log.info("stop_reason=end_turn → GREEN (polite ? ignored)")
+            elif has_question:
+                state.set_traffic(TrafficLight.RED, error_msg="Rückfrage — du bist dran!")
+                log.info("Question → RED")
             else:
                 state.set_traffic(TrafficLight.GREEN)
+                log.info("No action needed → GREEN")
         except Exception as e:
             state.set_traffic(TrafficLight.RED, error_msg=str(e))
             log.error(f"Stream error: {e}")
