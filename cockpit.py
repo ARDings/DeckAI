@@ -20,8 +20,8 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .state import CockpitState, TrafficLight, get_state
-from .image_gen import get_button_png_base64, STATIC_DIR, save_all_to_disk
+from state import CockpitState, TrafficLight, get_state
+from image_gen import get_button_png_base64, STATIC_DIR, save_all_to_disk
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -711,7 +711,7 @@ if __name__ == "__main__":
     import uvicorn
 
     # Pre-generate button images
-    from .image_gen import save_all_to_disk
+    from image_gen import save_all_to_disk
 
     save_all_to_disk()
 

@@ -129,7 +129,7 @@ def generate_all() -> dict[str, bytes]:
     results["vscode_focus"] = buf.getvalue()
 
     # Mode/Effort variants
-    from .state import EFFORT_LEVELS, WORK_MODES
+    from state import EFFORT_LEVELS, WORK_MODES
 
     for effort in EFFORT_LEVELS:
         img = make_mode_button("EFFORT", effort, ACCENT_BLUE)

@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 
-PLUGIN_STATIC = Path(__file__).parent.parent / "streamdock_plugin" / "static"
+PLUGIN_STATIC = Path(__file__).parent.parent / "com.deckai2.cockpit.sdPlugin" / "static"
 PLUGIN_STATIC.mkdir(parents=True, exist_ok=True)
 
 W, H = 80, 80
