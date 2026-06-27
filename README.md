@@ -1,6 +1,6 @@
 # DeckAI — Hardware AI Cockpit
 
-Physical control deck for AI-assisted coding. Stream Dock N3/N3e hardware buttons change how the AI behaves inside VS Code via transparent prompt injection.
+Physical control deck for AI-assisted coding. Works with the [Stream Dock N3](https://amzn.to/4oOkGuN) — hardware buttons change how the AI behaves inside VS Code via transparent prompt injection.
 
 ## How It Works
 
@@ -25,8 +25,8 @@ cd DeckAI
 python -m venv venv
 venv\Scripts\activate  # Windows
 pip install -r requirements.txt
-python -m deckai.setup_icons
-python -m deckai.image_gen
+python setup_icons.py
+python image_gen.py
 ```
 
 ### Configure VS Code
