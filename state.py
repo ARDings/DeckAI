@@ -58,11 +58,11 @@ class CockpitState:
     # --- Dial mutations ---
 
     def dial_effort_up(self):
-        self.effort_idx = min(len(EFFORT_LEVELS) - 1, self.effort_idx + 1)
+        self.effort_idx = (self.effort_idx + 1) % len(EFFORT_LEVELS)
         self._notify()
 
     def dial_effort_down(self):
-        self.effort_idx = max(0, self.effort_idx - 1)
+        self.effort_idx = (self.effort_idx - 1) % len(EFFORT_LEVELS)
         self._notify()
 
     def dial_mode_up(self):

@@ -63,19 +63,27 @@ def make_traffic_full(color: str, active: bool) -> Image.Image:
 # --- Mode display: small dim labels, NO large foreground value ---
 
 def make_mode_button(label: str, value: str, accent_color: tuple = ACCENT_BLUE) -> Image.Image:
-    """Mode display button with small background labels, no large value text."""
+    """Clean centered text: LABEL on top, value below (auto-split long lines)."""
     img = Image.new("RGBA", (W, H), BG_DARK)
     d = ImageDraw.Draw(img)
-    font_small = _get_font(8)
 
-    # Top label (dim)
-    d.text((W // 2, 8), label, fill=TEXT_DIM, font=font_small, anchor="mt")
+    # Label at top
+    d.text((W // 2, 12), label, fill=accent_color, font=_get_font(8), anchor="mt")
 
-    # Accent line
-    d.rectangle([20, 24, W - 20, 26], fill=accent_color)
+    # Value: split into max 2 lines if too long, adjust font size
+    words = value.split(" ")
+    font_size = 11 if len(value) < 14 else 9
+    font = _get_font(font_size)
 
-    # Bottom hint (dim)
-    d.text((W // 2, H - 8), "DIAL", fill=TEXT_DIM, font=_get_font(7), anchor="mb")
+    if len(value) > 14 and len(words) >= 3:
+        # Two-line: split roughly in half
+        mid = len(words) // 2
+        line1 = " ".join(words[:mid])
+        line2 = " ".join(words[mid:])
+        d.text((W // 2, 36), line1, fill=TEXT_WHITE, font=font, anchor="mt")
+        d.text((W // 2, 50), line2, fill=TEXT_WHITE, font=font, anchor="mt")
+    else:
+        d.text((W // 2, 42), value, fill=TEXT_WHITE, font=font, anchor="mt")
 
     return img
 

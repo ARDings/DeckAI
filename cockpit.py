@@ -328,6 +328,34 @@ async def get_full_state():
 
 
 # ---------------------------------------------------------------------------
+# Debug + Answer endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/log/dial")
+async def log_dial(request: Request):
+    """Debug: log raw dialRotate event payload."""
+    body = await request.json()
+    log.info(f"[DIAL DEBUG] {body}")
+    return {"ok": True}
+
+
+@app.post("/answer/{text}")
+async def quick_answer(text: str):
+    """Type a quick answer via keyboard simulation."""
+    log.info(f"Answer: [{text}]")
+    try:
+        if sys.platform == "win32":
+            script = f'Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.SendKeys]::SendWait("{text}")'
+            subprocess.run(["powershell","-NoProfile","-Command",script],timeout=5,capture_output=True)
+        elif sys.platform == "darwin":
+            subprocess.run(["osascript","-e",f'tell app "System Events" to keystroke "{text}"'],timeout=5)
+        return {"status":"ok","text":text}
+    except Exception as e:
+        return {"status":"error","message":str(e)}
+
+
+# ---------------------------------------------------------------------------
 # WebSocket endpoint (Stream Dock plugin connects here)
 # ---------------------------------------------------------------------------
 
@@ -498,12 +526,20 @@ async def proxy_anthropic(request: Request):
 
             # After stream: check if AI asked a question
             full = b"".join(all_chunks).decode("utf-8", errors="ignore")
-            # Count question marks in the last portion (the AI's final response)
-            last_portion = full[-3000:] if len(full) > 3000 else full
-            question_count = last_portion.count("?")
-            if question_count > 0:
-                state.set_traffic(TrafficLight.RED, error_msg=f"Rückfrage? ({question_count} Fragen)")
-                log.info(f"Question detected — RED ({question_count} '?' found)")
+            # Check the LAST 2000 chars (AI's final response, after any thinking blocks)
+            tail = full[-2000:] if len(full) > 2000 else full
+            # Question patterns (German + English)
+            question_patterns = [
+                "?", "möchtest", "soll ich", "fortfahren", "weitermachen",
+                "would you", "shall i", "continue", "proceed",
+                "choose", "option", "wählen", "entscheiden",
+            ]
+            is_question = any(p.lower() in tail.lower() for p in question_patterns)
+            q_count = tail.count("?")
+            log.info(f"Stream done — ?count={q_count}, question={is_question}, tail_preview={tail[-200:]}")
+            if is_question:
+                state.set_traffic(TrafficLight.RED, error_msg="Rückfrage — Antwort nötig")
+                log.info("QUESTION DETECTED → RED")
             else:
                 state.set_traffic(TrafficLight.GREEN)
         except Exception as e:
