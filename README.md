@@ -124,7 +124,7 @@ Default effort level can be changed in `deckai/state.py` by adjusting `effort_id
 
 ## ULANZI TC001 — Animated Eyes (Optional)
 
-DeckAI can control a [ULANZI TC001](https://amzn.to/4oOkGuN) smart pixel clock running [AWTRIX3](https://github.com/Blueforcer/awtrix3) firmware as animated eyes that reflect the AI's status.
+DeckAI can control a [ULANZI TC001](https://amzn.to/4vHwdis) smart pixel clock running [AWTRIX3](https://github.com/Blueforcer/awtrix3) firmware as animated eyes that reflect the AI's status.
 
 ### Setup
 
