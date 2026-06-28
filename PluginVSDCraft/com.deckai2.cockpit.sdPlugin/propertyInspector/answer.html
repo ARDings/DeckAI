@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Answer Settings</title>
+<style>
+body{font-family:'Segoe UI',sans-serif;background:#1e1e1e;color:#ccc;margin:12px;font-size:12px;}
+label{display:block;margin-bottom:4px;color:#999;font-weight:600;}
+select,input{width:100%;padding:6px;background:#2d2d2d;color:#fff;border:1px solid #444;border-radius:4px;font-size:12px;box-sizing:border-box;}
+.hint{color:#666;font-size:10px;margin-top:8px;}
+</style>
+</head>
+<body>
+<label>Answer text:</label>
+<input type="text" id="text" placeholder="e.g. Ja, Nein, Immer">
+<p class="hint">This text will be typed when the button is pressed.</p>
+<script>
+window.connectElgatoStreamDeckSocket=function(){
+    var port=arguments[0],uuid=arguments[1],event=arguments[2],info=JSON.parse(arguments[3]);
+    var ws=new WebSocket('ws://127.0.0.1:'+port);
+    ws.onopen=function(){ws.send(JSON.stringify({event:event,uuid:uuid}));};
+    ws.onmessage=function(msg){
+        var d=JSON.parse(msg.data);
+        if(d.event==='didReceiveSettings'&&d.payload&&d.payload.settings){
+            if(d.payload.settings.text)document.getElementById('text').value=d.payload.settings.text;
+        }
+    };
+    document.getElementById('text').addEventListener('input',function(){
+        ws.send(JSON.stringify({event:'setSettings',context:uuid,payload:{text:this.value}}));
+    });
+};
+</script>
+</body>
+</html>

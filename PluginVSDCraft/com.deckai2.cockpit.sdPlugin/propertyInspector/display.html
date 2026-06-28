@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Display Settings</title>
+<style>
+  body { font-family: 'Segoe UI', sans-serif; background: #1e1e1e; color: #ccc;
+         margin: 12px; font-size: 12px; }
+  label { display: block; margin-bottom: 4px; color: #999; font-weight: 600; }
+  select { width: 100%; padding: 6px; background: #2d2d2d; color: #fff; border: 1px solid #444;
+           border-radius: 4px; font-size: 12px; }
+  .hint { color: #666; font-size: 10px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<label for="role">Display Mode:</label>
+<select id="role" name="role">
+  <option value="effort">🔹 Effort Level (Large Dial)</option>
+  <option value="mode">🔸 Work Mode (Small Dial)</option>
+</select>
+<p class="hint">Bottom left = Effort, Bottom right = Work Mode. Adjusted via the Stream Dock dials.</p>
+
+<script src="../plugin/utils/common.js"></script>
+<script>
+  var plugin = new Plugins("deckai");
+  window.connectElgatoStreamDeckSocket = function() {
+    var port = arguments[0];
+    var uuid = arguments[1];
+    var event = arguments[2];
+    var info = JSON.parse(arguments[3]);
+
+    window.socket = new WebSocket('ws://127.0.0.1:' + port);
+    window.socket.onopen = function() {
+      window.socket.send(JSON.stringify({ event: event, uuid: uuid }));
+    };
+    window.socket.onmessage = function(msg) {
+      var data = JSON.parse(msg.data);
+      if (data.event === 'didReceiveSettings' && data.payload && data.payload.settings) {
+        var s = data.payload.settings;
+        if (s.role) document.getElementById('role').value = s.role;
+      }
+    };
+
+    document.getElementById('role').addEventListener('change', function() {
+      window.socket.send(JSON.stringify({
+        event: 'setSettings',
+        context: uuid,
+        payload: { role: this.value }
+      }));
+    });
+  };
+</script>
+</body>
+</html>

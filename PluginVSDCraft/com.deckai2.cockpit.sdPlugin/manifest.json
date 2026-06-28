@@ -1,0 +1,87 @@
+{
+  "SDKVersion": 1,
+  "Author": "DeckAI",
+  "Name": "DeckAI Cockpit",
+  "Icon": "static/plugin-icon",
+  "CodePath": "plugin/index.html",
+  "Description": "AI Cockpit — hardware dials control VS Code AI behavior. Traffic lights, effort/mode display, WebSocket-connected.",
+  "Category": "DeckAI",
+  "CategoryIcon": "static/plugin-icon",
+  "Version": "6.0.0",
+  "URL": "https://github.com/Cspin/DeckAI",
+  "OS": [
+    { "Platform": "mac", "MinimumVersion": "10.11" },
+    { "Platform": "windows", "MinimumVersion": "7" }
+  ],
+  "Software": { "MinimumVersion": "2.9" },
+  "Actions": [
+    {
+      "Name": "Traffic Light",
+      "Icon": "static/traffic-default",
+      "UUID": "com.deckai.traffic",
+      "States": [
+        {
+          "FontSize": "9",
+          "TitleAlignment": "bottom",
+          "Image": "static/traffic-default"
+        }
+      ],
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "Tooltip": "Traffic light button — displays green/yellow/red status from Python cockpit",
+      "PropertyInspectorPath": "propertyInspector/traffic.html"
+    },
+    {
+      "Name": "Mode Display",
+      "Icon": "static/display-default",
+      "UUID": "com.deckai.display",
+      "States": [
+        {
+          "FontSize": "9",
+          "TitleAlignment": "bottom",
+          "Image": "static/display-default"
+        }
+      ],
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "Tooltip": "Displays current Effort or Work Mode. Updated live via Python cockpit.",
+      "PropertyInspectorPath": "propertyInspector/display.html"
+    },
+    {
+      "Name": "VS Code Focus",
+      "Icon": "static/vscode-default",
+      "UUID": "com.deckai.vscode",
+      "States": [
+        {
+          "FontSize": "10",
+          "TitleAlignment": "middle",
+          "Image": "static/vscode-default"
+        }
+      ],
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "Tooltip": "Bring VS Code to the foreground. One press = instant focus.",
+      "PropertyInspectorPath": "propertyInspector/vscode.html"
+    },
+    {
+      "Name": "Answer Button",
+      "Icon": "static/traffic-default",
+      "UUID": "com.deckai.answer",
+      "States": [
+        {
+          "FontSize": "10",
+          "TitleAlignment": "middle",
+          "Image": "static/traffic-default"
+        }
+      ],
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "Tooltip": "Quick answer button — configure text in property inspector. Default: Ja / Immer / Nein.",
+      "PropertyInspectorPath": "propertyInspector/answer.html"
+    }
+  ]
+}

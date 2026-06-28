@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>DeckAI</title></head>
+<body>
+<script>
+// === DeckAI Cockpit v6 — No dials, button-press cycling ===
+
+// -- $SD SDK --
+let websocket=null;
+const $SD={
+    setTitle(c,t){websocket.send(JSON.stringify({event:"setTitle",context:c,payload:{title:""+t,target:0}}));},
+    setSettings(c,p){websocket.send(JSON.stringify({event:"setSettings",context:c,payload:p}));},
+    setImage(c,u){let i=new Image();i.src=u;i.onload=function(){let cv=document.createElement("canvas");cv.width=this.naturalWidth;cv.height=this.naturalHeight;let ctx=cv.getContext("2d");ctx.drawImage(this,0,0);websocket.send(JSON.stringify({event:"setImage",context:c,payload:{image:cv.toDataURL("image/png"),target:0}}));};}
+};
+
+// -- State --
+var wsReady=false,pending=[];
+function flush(){while(pending.length)pending.shift()();}
+function whenReady(f){if(wsReady)f();else pending.push(f);}
+var cockpitImages={},cockpitWs=null;
+function connectCockpit(){
+    if(cockpitWs&&cockpitWs.readyState===WebSocket.OPEN)return;
+    try{cockpitWs=new WebSocket("ws://127.0.0.1:8000/ws");}catch(e){setTimeout(connectCockpit,2000);return;}
+    cockpitWs.onmessage=function(e){
+        try{var s=JSON.parse(e.data);for(var k in s.buttons)cockpitImages[k]=s.buttons[k];updateTraffic(s.traffic_light);updateDisplays(s);}catch(er){}
+    };
+    cockpitWs.onclose=function(){cockpitWs=null;setTimeout(connectCockpit,2000);};
+}
+
+// -- Trackers --
+var trafficCtx={};
+var displayCtx={};
+var vscCtx=null;
+
+function updateTraffic(active){
+    var cols=["green","yellow","red"];
+    for(var i=0;i<cols.length;i++){
+        var c=cols[i],ctx=trafficCtx[c];if(!ctx)continue;
+        var st=(active===c)?"active":"inactive";
+        var b64=cockpitImages["btn_traffic_"+c+"_"+st];
+        if(b64)$SD.setImage(ctx,"data:image/png;base64,"+b64);
+    }
+}
+function updateDisplays(s){
+    var ec=displayCtx["effort"],mc=displayCtx["mode"];
+    if(ec){var b=cockpitImages["btn_effort"];if(b)$SD.setImage(ec,"data:image/png;base64,"+b);}
+    if(mc){var b2=cockpitImages["btn_mode"];if(b2)$SD.setImage(mc,"data:image/png;base64,"+b2);}
+}
+
+// -- Actions --
+var $data={
+    "com.deckai.traffic":{
+        willAppear:function(d){
+            var ctx=d.context,s=(d.payload&&d.payload.settings)||{},role=s.role||"traffic_green",color=role.split("_")[1];
+            trafficCtx[color]=ctx;
+            whenReady(function(){
+                var b=cockpitImages["btn_traffic_"+color+"_inactive"];
+                if(b)$SD.setImage(ctx,"data:image/png;base64,"+b);
+                else $SD.setImage(ctx,"http://127.0.0.1:8000/static/traffic_"+color+"_inactive.png");
+                $SD.setSettings(ctx,{role:role});
+            });
+        },
+        willDisappear:function(d){for(var r in trafficCtx)if(trafficCtx[r]===d.context)delete trafficCtx[r];}
+    },
+    "com.deckai.display":{
+        willAppear:function(d){
+            var ctx=d.context,s=(d.payload&&d.payload.settings)||{},role=s.role||"effort";
+            displayCtx[role]=ctx;
+            var key=role==="effort"?"btn_effort":"btn_mode";
+            whenReady(function(){
+                var b=cockpitImages[key];
+                if(b)$SD.setImage(ctx,"data:image/png;base64,"+b);
+                else $SD.setImage(ctx,"http://127.0.0.1:8000/static/"+key+".png");
+                $SD.setSettings(ctx,{role:role});
+            });
+        },
+        willDisappear:function(d){for(var r in displayCtx)if(displayCtx[r]===d.context)delete displayCtx[r];},
+        keyDown:function(d){
+            var s=(d.payload&&d.payload.settings)||{},role=s.role||"effort";
+            var ep=(role==="effort")?"effort":"mode";
+            var x=new XMLHttpRequest();x.open("GET","http://127.0.0.1:8000/dial/"+ep+"?dir=up",true);x.send();
+        }
+    },
+    "com.deckai.vscode":{
+        willAppear:function(d){
+            vscCtx=d.context;
+            whenReady(function(){
+                var b=cockpitImages["btn_vscode"];
+                if(b)$SD.setImage(vscCtx,"data:image/png;base64,"+b);
+                else $SD.setImage(vscCtx,"http://127.0.0.1:8000/static/vscode_focus.png");
+            });
+        },
+        willDisappear:function(){vscCtx=null;},
+        keyDown:function(){var x=new XMLHttpRequest();x.open("POST","http://127.0.0.1:8000/focus/vscode",true);x.send();}
+    },
+    "com.deckai.answer":{
+        willAppear:function(d){
+            var ctx=d.context,s=(d.payload&&d.payload.settings)||{},text=s.text||"?";
+            whenReady(function(){$SD.setTitle(ctx,text);});
+        },
+        keyDown:function(d){
+            var s=(d.payload&&d.payload.settings)||{},text=s.text||"?";
+            var x=new XMLHttpRequest();x.open("POST","http://127.0.0.1:8000/answer/"+encodeURIComponent(text),true);x.send();
+        }
+    }
+};
+
+// -- Entry --
+function connectElgatoStreamDeckSocket(inPort,uuid,event,info){
+    websocket=new WebSocket("ws://127.0.0.1:"+inPort);
+    websocket.onopen=function(){wsReady=true;websocket.send(JSON.stringify({event:event,uuid:uuid}));flush();};
+    websocket.onmessage=function(e){var d=JSON.parse(e.data);if(d.action&&$data[d.action]){var h=$data[d.action][d.event];if(typeof h==="function")h(d);}};
+}
+connectCockpit();
+</script>
+</body>
+</html>
