@@ -112,6 +112,7 @@ Default effort level can be changed in `deckai/state.py` by adjusting `effort_id
 ├── cockpit.py              # FastAPI server (HTTP, WS, proxy, detection)
 ├── state.py                # State machine (effort, mode, traffic light)
 ├── image_gen.py            # Button image generator (80x80 px)
+├── eyes.py                 # TC001 animated eyes controller
 ├── setup_icons.py          # Plugin icon generator
 ├── static/                 # Generated button images
 ├── com.deckai2.cockpit.sdPlugin/  # Stream Dock plugin
@@ -120,6 +121,45 @@ Default effort level can be changed in `deckai/state.py` by adjusting `effort_id
 ├── README.md
 └── LICENSE
 ```
+
+## ULANZI TC001 — Animated Eyes (Optional)
+
+DeckAI can control a [ULANZI TC001](https://amzn.to/4oOkGuN) smart pixel clock running [AWTRIX3](https://github.com/Blueforcer/awtrix3) firmware as animated eyes that reflect the AI's status.
+
+### Setup
+
+1. Flash AWTRIX3 firmware onto your TC001 (see the [AWTRIX documentation](https://blueforcer.github.io/awtrix3/)).
+2. Note the TC001's IP address on your network.
+3. Start the cockpit with the `TC001_IP` environment variable:
+
+```bash
+# Windows
+set TC001_IP=192.168.178.100
+run.bat
+
+# macOS / Linux
+TC001_IP=192.168.178.100 python -m uvicorn cockpit:app --host 127.0.0.1 --port 8000
+```
+
+### Eye Animations
+
+| State | Eyes | Description |
+|-------|------|-------------|
+| Green | Slow wandering gaze | Relaxed, looking around the room |
+| Yellow | Focused half-lidded, rapid blinks | Concentrated working |
+| Red | Wide alert eyes, direct stare | Needs your attention |
+
+The eyes update automatically with the traffic light state. Each animation is a 32x8 pixel sequence rendered on the TC001's LED matrix.
+
+### State Integration
+
+```
+Traffic Light GREEN  ──→  Eyes relaxed, wandering
+Traffic Light YELLOW ──→  Eyes focused, blinking
+Traffic Light RED    ──→  Eyes wide, staring forward
+```
+
+No extra configuration needed — if `TC001_IP` is set, the eyes run; if not, DeckAI works the same without them.
 
 ## License
 

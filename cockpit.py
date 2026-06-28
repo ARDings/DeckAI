@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from state import CockpitState, TrafficLight, get_state
 from image_gen import get_button_png_base64, STATIC_DIR, save_all_to_disk
+from eyes import get_eyes, TC001_ENABLED
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -54,8 +55,37 @@ PROXY_PORT = int(os.environ.get("DECKAI_PORT", "8000"))
 ws_clients: set[WebSocket] = set()
 
 
+# Pre-render static images at import time (never change)
+_TRAFFIC_IMAGES = {
+    "green_active": get_button_png_base64("traffic_green_active"),
+    "yellow_active": get_button_png_base64("traffic_yellow_active"),
+    "red_active": get_button_png_base64("traffic_red_active"),
+    "green_inactive": get_button_png_base64("traffic_green_inactive"),
+    "yellow_inactive": get_button_png_base64("traffic_yellow_inactive"),
+    "red_inactive": get_button_png_base64("traffic_red_inactive"),
+}
+_VSCODE_IMAGE = get_button_png_base64("vscode_focus")
+
+# Cached effort/mode images (change when state changes)
+_img_cache: dict = {}
+_last_effort: str = ""
+_last_mode: str = ""
+
+
 async def broadcast_state(state: CockpitState):
     """Push current cockpit state to all connected Stream Dock plugins."""
+    global _last_effort, _last_mode
+
+    # Traffic images: always regenerate (they depend on traffic_light)
+    # Static images: only regenerate when effort/mode changes
+    if state.effort != _last_effort:
+        _img_cache["btn_effort"] = get_button_png_base64(f"effort_{state.effort}")
+        _last_effort = state.effort
+
+    if state.mode != _last_mode:
+        _img_cache["btn_mode"] = get_button_png_base64(f"mode_{state.mode}")
+        _last_mode = state.mode
+
     payload = {
         "type": "state_update",
         "traffic_light": state.traffic_light.value,
@@ -65,15 +95,15 @@ async def broadcast_state(state: CockpitState):
         "mode_idx": state.mode_idx,
         "error_message": state.error_message,
         "buttons": {
-            "btn_traffic_green_active": get_button_png_base64("traffic_green_active"),
-            "btn_traffic_yellow_active": get_button_png_base64("traffic_yellow_active"),
-            "btn_traffic_red_active": get_button_png_base64("traffic_red_active"),
-            "btn_traffic_green_inactive": get_button_png_base64("traffic_green_inactive"),
-            "btn_traffic_yellow_inactive": get_button_png_base64("traffic_yellow_inactive"),
-            "btn_traffic_red_inactive": get_button_png_base64("traffic_red_inactive"),
-            "btn_effort": get_button_png_base64(f"effort_{state.effort}"),
-            "btn_vscode": get_button_png_base64("vscode_focus"),
-            "btn_mode": get_button_png_base64(f"mode_{state.mode}"),
+            "btn_traffic_green_active": _TRAFFIC_IMAGES["green_active"],
+            "btn_traffic_yellow_active": _TRAFFIC_IMAGES["yellow_active"],
+            "btn_traffic_red_active": _TRAFFIC_IMAGES["red_active"],
+            "btn_traffic_green_inactive": _TRAFFIC_IMAGES["green_inactive"],
+            "btn_traffic_yellow_inactive": _TRAFFIC_IMAGES["yellow_inactive"],
+            "btn_traffic_red_inactive": _TRAFFIC_IMAGES["red_inactive"],
+            "btn_effort": _img_cache.get("btn_effort", get_button_png_base64("effort_High (Detailed)")),
+            "btn_vscode": _VSCODE_IMAGE,
+            "btn_mode": _img_cache.get("btn_mode", get_button_png_base64("mode_Code Agent")),
         },
     }
     dead: set[WebSocket] = set()
@@ -86,10 +116,13 @@ async def broadcast_state(state: CockpitState):
 
 
 def on_state_change(state: CockpitState):
-    """Sync callback → schedules async broadcast."""
+    """Sync callback → schedules async broadcast + eye update."""
     try:
         loop = asyncio.get_running_loop()
         loop.create_task(broadcast_state(state))
+        # Update TC001 eyes to match traffic light
+        eyes = get_eyes()
+        eyes.set_state(state.traffic_light.value)
     except RuntimeError:
         pass  # No event loop yet (e.g. during startup)
 
@@ -104,13 +137,21 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown."""
     state = get_state()
     state.on_change(on_state_change)
+
+    # Start TC001 eyes if configured
+    eyes = get_eyes()
+    await eyes.start()
+
     log.info(f"DeckAI Cockpit started")
     log.info(f"  Anthropic -> {DEEPSEEK_ANTHROPIC_URL}")
     log.info(f"  OpenAI   -> {DEEPSEEK_OPENAI_URL}")
+    if TC001_ENABLED:
+        log.info(f"  TC001 Eyes -> {eyes.ip}")
     log.info(f"WebSocket: ws://127.0.0.1:{PROXY_PORT}/ws")
     log.info(f"Dial API:  http://127.0.0.1:{PROXY_PORT}/dial/effort?dir=up")
     log.info(f"Claude Code: http://127.0.0.1:{PROXY_PORT}/messages")
     yield
+    await eyes.stop()
     log.info("DeckAI Cockpit shutting down.")
 
 
@@ -349,27 +390,31 @@ async def test_question(request: Request):
     text = body.get("text", "")
     t = text.lower()
 
-    is_tool_use_stop = '"stop_reason":"tool_use"' in text or '"stop_reason": "tool_use"' in text
-    is_end_turn = '"stop_reason":"end_turn"' in text or '"stop_reason": "end_turn"' in text
+    import re as _re
+    stops = _re.findall(r'"stop_reason"\s*:\s*"([^"]+)"', text)
+    last_stop = stops[-1] if stops else "unknown"
 
-    question_patterns = [
-        "?", "soll ich", "möchtest du", "willst du",
-        "shall i", "would you like", "do you want me",
-        "choose", "wähle", "option",
-        "continue?", "proceed?", "fortfahren?",
-        "is that ok?", "does that look right?",
-        "confirm?", "bestätigen?",
-        "try again", "what would you",
-    ]
-    has_question = any(p in t for p in question_patterns)
+    has_question = False
+    if last_stop not in ("end_turn", "tool_use", "max_tokens", "stop_sequence"):
+        strict_questions = [
+            "soll ich", "möchtest du", "willst du",
+            "shall i", "would you like", "do you want me",
+            "continue?", "proceed?", "fortfahren?",
+            "is that ok?", "does that look right?",
+            "confirm?", "bestätigen?",
+            "what would you",
+        ]
+        has_question = any(p in t for p in strict_questions)
+        if not has_question:
+            has_question = t.rstrip().endswith("?")
 
     state = get_state()
-    if is_tool_use_stop:
+    if last_stop == "tool_use":
         state.set_traffic(TrafficLight.RED, error_msg="Befehl wartet — genehmigen!")
-        result = "RED (stop_reason=tool_use)"
-    elif is_end_turn:
+        result = f"RED (stop_reason=tool_use)"
+    elif last_stop in ("end_turn", "max_tokens", "stop_sequence"):
         state.set_traffic(TrafficLight.GREEN)
-        result = "GREEN (stop_reason=end_turn)"
+        result = f"GREEN (stop_reason={last_stop})"
     elif has_question:
         state.set_traffic(TrafficLight.RED, error_msg="Rückfrage!")
         result = "RED (question)"
@@ -379,6 +424,8 @@ async def test_question(request: Request):
 
     return {
         "result": result,
+        "last_stop": last_stop,
+        "all_stops": stops,
         "has_question": has_question,
         "text_snippet": text[-200:],
     }
@@ -472,74 +519,6 @@ def _inject_into_body(body: dict, injection: str, format_type: str) -> dict:
     return body
 
 
-async def _proxy_stream(request: Request, target_url: str, format_type: str):
-    """
-    Intercept request, inject cockpit state, forward to DeepSeek,
-    and manage the traffic light.
-    """
-    state = get_state()
-
-    # Set traffic light to YELLOW (working)
-    state.set_traffic(TrafficLight.YELLOW)
-
-    try:
-        body = await request.json()
-    except Exception:
-        state.set_traffic(TrafficLight.RED, error_msg="Invalid JSON in request body")
-        yield 'data: {"error": "Invalid JSON body"}\n\n'
-        return
-
-    # 💥 THE MAGIC: inject hardware dial state into the prompt
-    injection = state.build_injection()
-    log.info(f"Injecting [{format_type}]: [{state.mode}] [{state.effort}]")
-    body = _inject_into_body(body, injection, format_type)
-
-    # Prepare headers — strip host/content-length, forward auth
-    headers = {}
-    for k, v in request.headers.items():
-        kl = k.lower()
-        if kl not in ("host", "content-length", "transfer-encoding"):
-            headers[k] = v
-
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
-            log.info(f"Forwarding to: {target_url}")
-            async with client.stream(
-                "POST",
-                target_url,
-                json=body,
-                headers=headers,
-            ) as response:
-                log.info(f"DeepSeek status={response.status_code}, content-type={response.headers.get('content-type')}")
-                # Read entire body first to debug, then yield
-                content = await response.aread()
-                log.info(f"DeepSeek body length: {len(content)} bytes, first 300: {content[:300]}")
-                yield content
-
-        # Success → GREEN
-        state.set_traffic(TrafficLight.GREEN)
-        log.info("Stream complete — GREEN")
-
-        # Success → GREEN
-        state.set_traffic(TrafficLight.GREEN)
-        log.info("Stream complete — GREEN")
-
-    except httpx.ConnectError as e:
-        state.set_traffic(TrafficLight.RED, error_msg=f"Connection to DeepSeek failed: {e}")
-        log.error(f"Connection error: {e}")
-        yield f'data: {{"error": "Proxy connection failed: {e}"}}\n\n'
-
-    except httpx.ReadTimeout as e:
-        state.set_traffic(TrafficLight.RED, error_msg=f"DeepSeek timeout: {e}")
-        log.error(f"Timeout: {e}")
-        yield f'data: {{"error": "DeepSeek timeout: {e}"}}\n\n'
-
-    except Exception as e:
-        state.set_traffic(TrafficLight.RED, error_msg=str(e))
-        log.error(f"Unexpected error: {e}")
-        yield f'data: {{"error": "{e}"}}\n\n'
-
-
 # ---- Anthropic Messages API (Claude Code extension) ----
 # Claude Code sends to both /messages and /v1/messages with ?beta=true
 
@@ -586,38 +565,49 @@ async def proxy_anthropic(request: Request):
             tail = full[-2000:] if len(full) > 2000 else full
             t = tail.lower()
 
-            # Detect if AI needs user action:
-            # 1. stop_reason="tool_use" → user must approve → RED (highest priority)
-            # 2. stop_reason="end_turn" → AI is done → GREEN (ignore polite "?")
-            is_tool_use_stop = '"stop_reason":"tool_use"' in full or '"stop_reason": "tool_use"' in full
-            is_end_turn = '"stop_reason":"end_turn"' in full or '"stop_reason": "end_turn"' in full
+            # Find the LAST stop_reason (allow whitespace in JSON)
+            import re
+            stops = re.findall(r'"stop_reason"\s*:\s*"([^"]+)"', full)
+            last_stop = stops[-1] if stops else "unknown"
+            log.info(f"Stream done — last_stop={last_stop}")
 
-            question_patterns = [
-                "?", "soll ich", "möchtest du", "willst du",
-                "shall i", "would you like", "do you want me",
-                "choose", "wähle", "option",
-                "continue?", "proceed?", "fortfahren?",
-                "is that ok?", "does that look right?",
-                "confirm?", "bestätigen?",
-                "try again", "what would you",
-            ]
-            has_question = any(p in tail.lower() for p in question_patterns)
+            # Only check questions if stop_reason is unknown/missing
+            has_question = False
+            if last_stop not in ("end_turn", "tool_use", "max_tokens", "stop_sequence"):
+                # Strict patterns — only clear direct questions
+                strict_questions = [
+                    "soll ich", "möchtest du", "willst du",
+                    "shall i", "would you like", "do you want me",
+                    "continue?", "proceed?", "fortfahren?",
+                    "is that ok?", "does that look right?",
+                    "confirm?", "bestätigen?",
+                    "what would you",
+                ]
+                has_question = any(p in tail.lower() for p in strict_questions)
+                # Also check: "?" as last non-whitespace char of the tail
+                if not has_question:
+                    stripped = tail.rstrip()
+                    has_question = stripped.endswith("?")
 
-            # Decision: tool_use always RED, end_turn always GREEN
-            if is_tool_use_stop:
-                state.set_traffic(TrafficLight.RED, error_msg="Befehl wartet — genehmigen!")
-                log.info("stop_reason=tool_use → RED")
-            elif is_end_turn:
-                state.set_traffic(TrafficLight.GREEN)
-                log.info("stop_reason=end_turn → GREEN (polite ? ignored)")
-            elif has_question:
-                state.set_traffic(TrafficLight.RED, error_msg="Rückfrage — du bist dran!")
-                log.info("Question → RED")
+            # Only finalize if no newer request changed the state
+            if state.traffic_light == TrafficLight.YELLOW:
+                if last_stop == "tool_use":
+                    state.set_traffic(TrafficLight.RED, error_msg="Befehl wartet — genehmigen!")
+                    log.info("last_stop=tool_use → RED")
+                elif last_stop in ("end_turn", "max_tokens", "stop_sequence"):
+                    state.set_traffic(TrafficLight.GREEN)
+                    log.info(f"last_stop={last_stop} → GREEN")
+                elif has_question:
+                    state.set_traffic(TrafficLight.RED, error_msg="Rückfrage — du bist dran!")
+                    log.info("Question → RED")
+                else:
+                    state.set_traffic(TrafficLight.GREEN)
+                    log.info("No action needed → GREEN")
             else:
-                state.set_traffic(TrafficLight.GREEN)
-                log.info("No action needed → GREEN")
+                log.info(f"Stream ended but state already {state.traffic_light.value} — skipping finalize")
         except Exception as e:
-            state.set_traffic(TrafficLight.RED, error_msg=str(e))
+            if state.traffic_light == TrafficLight.YELLOW:
+                state.set_traffic(TrafficLight.RED, error_msg=str(e))
             log.error(f"Stream error: {e}")
 
     return StreamingResponse(
@@ -673,9 +663,11 @@ async def proxy_openai_v1(request: Request):
                 async with client.stream("POST", target_url, json=body, headers=headers) as resp:
                     async for chunk in resp.aiter_bytes():
                         yield chunk
-            state.set_traffic(TrafficLight.GREEN)
+            if state.traffic_light == TrafficLight.YELLOW:
+                state.set_traffic(TrafficLight.GREEN)
         except Exception as e:
-            state.set_traffic(TrafficLight.RED, error_msg=str(e))
+            if state.traffic_light == TrafficLight.YELLOW:
+                state.set_traffic(TrafficLight.RED, error_msg=str(e))
             log.error(f"Stream error: {e}")
 
     return StreamingResponse(

@@ -5,6 +5,9 @@ REM  Starts the Python proxy + generates button images.
 REM  Run this BEFORE opening VS Code.
 REM ============================================================
 
+REM ---- Configuration ----
+set TC001_IP=192.168.178.51
+
 cd /d "%~dp0"
 
 echo.
@@ -40,12 +43,13 @@ python image_gen.py
 
 REM ---- Start cockpit ----
 echo.
-echo 🚀 Starting DeckAI Cockpit on http://127.0.0.1:8000
-echo 📡 WebSocket: ws://127.0.0.1:8000/ws
-echo 🔄 Proxy:     http://127.0.0.1:8000/v1/messages
-echo 🌐 Dashboard: http://127.0.0.1:8000
+echo TC001: %TC001_IP%
+echo Starting DeckAI Cockpit on http://127.0.0.1:8000
+echo WebSocket: ws://127.0.0.1:8000/ws
+echo Proxy:     http://127.0.0.1:8000/v1/messages
+echo Dashboard: http://127.0.0.1:8000
 echo.
-echo ⚠️  Keep this window open while using VS Code!
+echo Keep this window open while using VS Code!
 echo =======================================================
 echo.
 
