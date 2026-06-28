@@ -2,6 +2,8 @@
 
 Physical control deck for AI-assisted coding. Works with the [Stream Dock N3](https://amzn.to/4oOkGuN) — hardware buttons change how the AI behaves inside VS Code via transparent prompt injection.
 
+<video src="https://xrchris.com/Deckaitrailer.mp4" controls width="600"></video>
+
 ## How It Works
 
 ```
