@@ -96,7 +96,7 @@ class TC001Eyes:
     def _choose_key(self):
         if self._state == "red":
             elapsed = time.monotonic() - self._state_since
-            return "red_help" if elapsed > 2.0 else "red_eyes"
+            return "red_help" if elapsed > 8.0 else "red_eyes"
         return self._state
 
     async def _run(self):

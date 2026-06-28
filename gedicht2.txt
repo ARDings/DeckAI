@@ -1,0 +1,4 @@
+Der Code kompiliert beim ersten Mal,
+die Ampel leuchtet grün.
+Doch fragt die KI: "Ist das normal?"
+Ich drück auf Ja — ich bin so kühn!

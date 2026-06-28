@@ -165,6 +165,31 @@ Traffic Light RED    ──→  Eyes wide, staring forward
 
 No extra configuration needed — if `TC001_IP` is set, the eyes run; if not, DeckAI works the same without them.
 
+## Smartphone Notifications (Optional)
+
+DeckAI can push notifications to your phone via [ntfy.sh](https://ntfy.sh) (free, open-source). Works with Android, iOS, and automatically appears on smart glasses like Rokid that mirror phone notifications.
+
+### Setup
+
+1. Install the [ntfy app](https://ntfy.sh/app) on your phone.
+2. Subscribe to a topic (e.g. `DeckAI-xrchris`). Use a unique name so only you receive it.
+3. Start the cockpit with your topic:
+
+```bash
+# Windows
+set NTFY_TOPIC=DeckAI-xrchris
+run.bat
+
+# macOS / Linux
+NTFY_TOPIC=DeckAI-xrchris python -m uvicorn cockpit:app --host 127.0.0.1 --port 8000
+```
+
+You will receive a push notification whenever:
+- The AI needs your input (RED / Help)
+- A task completes (GREEN / Ready)
+
+No notification is sent during normal processing (YELLOW).
+
 ## License
 
 MIT

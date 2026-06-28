@@ -7,6 +7,8 @@ REM ============================================================
 
 REM ---- Configuration ----
 set TC001_IP=192.168.178.51
+REM Phone notifications (ntfy.sh)
+set NTFY_TOPIC=DeckAI-xrchris
 
 cd /d "%~dp0"
 

@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from state import CockpitState, TrafficLight, get_state
 from image_gen import get_button_png_base64, STATIC_DIR, save_all_to_disk
 from eyes import get_eyes, TC001_ENABLED
+from notify import NOTIFY_ENABLED, NTFY_SERVER, NTFY_TOPIC, on_traffic_change
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -116,13 +117,16 @@ async def broadcast_state(state: CockpitState):
 
 
 def on_state_change(state: CockpitState):
-    """Sync callback → schedules async broadcast + eye update."""
+    """Sync callback → schedules async broadcast + eye update + notification."""
     try:
         loop = asyncio.get_running_loop()
         loop.create_task(broadcast_state(state))
         # Update TC001 eyes to match traffic light
         eyes = get_eyes()
         eyes.set_state(state.traffic_light.value)
+        # Push notification to phone (if configured)
+        if NOTIFY_ENABLED:
+            on_traffic_change(state.traffic_light.value, state.error_message)
     except RuntimeError:
         pass  # No event loop yet (e.g. during startup)
 
@@ -147,6 +151,8 @@ async def lifespan(app: FastAPI):
     log.info(f"  OpenAI   -> {DEEPSEEK_OPENAI_URL}")
     if TC001_ENABLED:
         log.info(f"  TC001 Eyes -> {eyes.ip}")
+    if NOTIFY_ENABLED:
+        log.info(f"  Notifications -> {NTFY_SERVER}/{NTFY_TOPIC}")
     log.info(f"WebSocket: ws://127.0.0.1:{PROXY_PORT}/ws")
     log.info(f"Dial API:  http://127.0.0.1:{PROXY_PORT}/dial/effort?dir=up")
     log.info(f"Claude Code: http://127.0.0.1:{PROXY_PORT}/messages")
@@ -497,6 +503,33 @@ async def websocket_endpoint(ws: WebSocket):
 # ---------------------------------------------------------------------------
 
 
+def _apply_effort(body: dict, state, format_type: str):
+    """Actually change model/thinking based on effort — real effect, not just prompt."""
+    effort = state.effort
+    original = body.get("model", "?")
+    if format_type == "anthropic":
+        if "Low" in effort:
+            body["model"] = "deepseek-v4-flash"
+        elif "Medium" in effort:
+            body["model"] = "deepseek-v4-flash"
+        elif "High" in effort:
+            body["model"] = "deepseek-v4-pro"
+        elif "Max" in effort:
+            body["model"] = "deepseek-v4-pro"
+            body["thinking"] = {"type": "enabled", "budget_tokens": 4096}
+    elif format_type == "openai":
+        if "Low" in effort:
+            body["model"] = "deepseek-chat"
+        elif "Medium" in effort:
+            body["model"] = "deepseek-chat"
+        elif "High" in effort or "Max" in effort:
+            body["model"] = "deepseek-reasoner"
+    if body.get("model") != original:
+        thinking = body.get("thinking", {})
+        extra = " +thinking" if "budget_tokens" in str(thinking) else ""
+        log.info(f"Effort [{effort}] → model={body['model']}{extra} (was {original})")
+
+
 def _inject_into_body(body: dict, injection: str, format_type: str) -> dict:
     """Inject hardware state into the request body. Modifies in-place."""
     if format_type == "anthropic":
@@ -540,6 +573,7 @@ async def proxy_anthropic(request: Request):
     injection = state.build_injection()
     log.info(f"Injecting [anthropic]: [{state.mode}] [{state.effort}]")
     body = _inject_into_body(body, injection, "anthropic")
+    _apply_effort(body, state, "anthropic")  # actually switch model based on effort
 
     headers = {}
     for k, v in request.headers.items():
@@ -648,6 +682,7 @@ async def proxy_openai_v1(request: Request):
     injection = state.build_injection()
     log.info(f"Injecting [openai]: [{state.mode}] [{state.effort}]")
     body = _inject_into_body(body, injection, "openai")
+    _apply_effort(body, state, "openai")
 
     headers = {}
     for k, v in request.headers.items():
