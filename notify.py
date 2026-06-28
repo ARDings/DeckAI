@@ -22,8 +22,8 @@ NOTIFY_ENABLED = bool(NTFY_TOPIC)
 
 # State change notifications — which transitions trigger a push
 NOTIFY_TRANSITIONS = {
-    "red":    ("Help needed!",          "AI needs you — check the screen.",   "high"),
-    "green":  ("AI Ready",              "Task complete, ready to continue.", "min"),
+    "red":    ("HELP needed",           "Check the screen.",   "high"),
+    "green":  None,
     "yellow": None,
 }
 
@@ -69,7 +69,7 @@ async def _send_delayed(state: str, delay: float, message: str):
 
 
 def on_traffic_change(new_state: str, message: str = ""):
-    """Notify only after state has been stable: RED 2s (Help), GREEN 5s."""
+    """Notify only after state is stable on RED (8s delay)."""
     global _prev_state, _pending_task
     if new_state != _prev_state:
         _prev_state = new_state
@@ -82,7 +82,5 @@ def on_traffic_change(new_state: str, message: str = ""):
 
             if new_state == "red":
                 _pending_task = loop.create_task(_send_delayed("red", 8.0, message))
-            elif new_state == "green":
-                _pending_task = loop.create_task(_send_delayed("green", 4.0, message))
         except RuntimeError:
             pass
